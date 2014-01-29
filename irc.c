@@ -8,36 +8,40 @@
 
 int main(int argc, char *argv[]) {
   int sockfd;
-  int i, l, sl, o = -1;
   char buffer[512];
-  char buf[513];
+  char *bot_owner = "Arturr";
+  char *nick = "Test";
+  char *chan = "#help";
   struct addrinfo hints;
   struct addrinfo *res;
-
+  
   memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC;
+  hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
-  hints.ai_flags = AI_PASSIVE;
   
   getaddrinfo(argv[1], "6667", &hints, &res);
   
   sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   connect(sockfd, res->ai_addr, res->ai_addrlen);
   
-  while ((sl = read(sockfd, buffer, 512))) {
-    for (i = 0; i < sl; i++) {
-      o++;
-      buf[o] = buffer[i];
-      if ((i > 0 && buffer[i] == '\n' && buffer[i - 1] == '\r') || o == 512) {
-        buf[o + 1] = '\0';
-        l = o;
-        o = -1;       
-        printf(">> %s", buf);
-      }   
+  sprintf(buffer, "USER %s 0 * :%s\r\n", nick, bot_owner);
+  send(sockfd, buffer, strlen(buffer), 0);
+  sprintf(buffer, "NICK %s\r\n", nick);
+  send(sockfd, buffer, strlen(buffer), 0);
+
+  while (recv(sockfd, buffer, 512, 0) > 0) {
+    fputs(buffer, stdout);
+    
+    if (!strncmp(buffer, "PING ", 5)) {
+      buffer[1] = 'O';
+      send(sockfd, buffer, strlen(buffer), 0);
+    }
+    
+    if (!strncmp(strchr(buffer, ' ') + 1, "001", 3)) {
+      sprintf(buffer, "JOIN %s\r\n", chan);
+      send(sockfd, buffer, strlen(buffer), 0);
     }
   }
-
-  freeaddrinfo(res);
 }
 
 
