@@ -7,8 +7,9 @@
 #include <unistd.h>
 #include <pthread.h> 
 
-#define IRC_CHANNEL "#help"
+#define IRC_CHANNEL "#testmeout"
 #define IRC_ADDRESS "irc.quakenet.org"
+#define IRC_PORT "6667"
 #define OWNER "Bingo"
 #define NICKNAME "SuchImpressive"
 
@@ -49,7 +50,9 @@ void* send_message(void* arg) {
   }  
 }
 
-int connect_to_server() {
+int get_socket(char* host, char* port) {
+  int rc;
+  int irc_socket;
   struct addrinfo hints;
   struct addrinfo *res;
   
@@ -57,30 +60,57 @@ int connect_to_server() {
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
   
-  getaddrinfo(IRC_ADDRESS, "6667", &hints, &res);
-  
-  int irc_socket = socket(res -> ai_family, res -> ai_socktype, res -> ai_protocol);
-  connect(irc_socket, res -> ai_addr, res -> ai_addrlen);
+  if ((rc = getaddrinfo(host, port, &hints, &res)) != 0 ) {
+    fprintf(stderr, "getaddrinfo() error: %s\n", gai_strerror(rc));
+    return -1;
+  }
 
-  char buffer[512];
+  irc_socket = socket(res -> ai_family, res -> ai_socktype, res -> ai_protocol);
   
+  if (irc_socket < 0) {
+    fprintf(stderr, "Couldn't get socket.\n");
+    goto error;
+  }
+
+  if (connect(irc_socket, res -> ai_addr, res -> ai_addrlen) < 0) {
+    fprintf(stderr, "Couldn't connect.\n");
+    goto error;
+  }
+  
+  freeaddrinfo(res);
+  return irc_socket;
+
+error:
+  freeaddrinfo(res);
+  return -1;
+}
+
+int main(int argc, char *argv[]) {
+  pthread_t receiver;
+  pthread_t sender;
+  
+  char buffer[512];
+
+  int irc_socket = get_socket(IRC_ADDRESS, IRC_PORT);
+
+  if (irc_socket < 0 ) {
+    printf("Connection failed.\n");
+    goto exit_err;
+  } 
+
+  //this block should be moved from here
   sprintf(buffer, "USER %s 0 * :%s\r\n", NICKNAME, OWNER);
   send(irc_socket, buffer, strlen(buffer), 0);
   sprintf(buffer, "NICK %s\r\n", NICKNAME);
   send(irc_socket, buffer, strlen(buffer), 0);
   
-  return irc_socket;
-}
 
-
-int main(int argc, char *argv[]) {
-  pthread_t receiver;
-  pthread_t sender;
-
-  int irc_socket = connect_to_server();
-
+  printf("all goood \n");
   while (1) {
     pthread_create (&receiver, NULL, &receive_message, &irc_socket);
-    pthread_create (&sender, NULL, &send_message, &irc_socket);
+  //  pthread_create (&sender, NULL, &send_message, &irc_socket);
   }
+
+exit_err:
+  exit(1);
 }
