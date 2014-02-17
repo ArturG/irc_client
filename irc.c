@@ -5,7 +5,8 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <pthread.h> 
+#include <pthread.h>
+#include <time.h>
 
 #define IRC_CHANNEL "#testmeout"
 #define IRC_ADDRESS "irc.quakenet.org"
@@ -13,12 +14,20 @@
 #define OWNER "Bingo"
 #define NICKNAME "SuchImpressive"
 
+/* Defines time in which IRC client will timeout 
+ * if no data is received */
+#define NO_DATA_TIMEOUT 90
+
+time_t IRC_LAST_ACTIVITY = 0;   // time of receiving last full line data from IRC server
+time_t IRC_LAST_RECONNECT = 0;  // time of last reconnection attempt
+
+
 void* receive_message(void* arg) {
   int irc_socket = *((int *) arg);
   char buffer[512];
-
+  
   while (recv(irc_socket, buffer, 512, 0) > 0) {
-    //fputs(buffer, stdout);
+    fputs(buffer, stdout);
     
     if (!strncmp(buffer, "PING ", 5)) {
       buffer[1] = 'O'; //replace char 'I' on 'O' inside 'PING'
@@ -35,6 +44,8 @@ void* receive_message(void* arg) {
       printf(".:. Connected to the channel %s .:. \n", IRC_CHANNEL);
       printf(".:. You can send messages directly through the console .:. \n");
     }
+
+    time(&IRC_LAST_ACTIVITY);
   }
 }
 
@@ -48,6 +59,29 @@ void* send_message(void* arg) {
     send(irc_socket, buffer, strlen(buffer), 0);  
     printf("You said: %s\n", message);
   }  
+}
+
+void* irc_timer() {
+  sleep(30);
+
+  time_t present, delta;
+  time(&present);
+
+  delta = present - IRC_LAST_ACTIVITY;
+
+  if (delta >= NO_DATA_TIMEOUT) {
+    printf(".:. Timeout awaiting data from server .:. \n");
+    irc_reconnect();
+    time(&IRC_LAST_ACTIVITY);
+  }
+}
+
+int irc_reconnect() {
+  //TODO
+}
+
+int irc_login() {
+      
 }
 
 int get_socket(char* host, char* port) {
@@ -87,7 +121,7 @@ error:
 
 int main(int argc, char *argv[]) {
   pthread_t receiver;
-  pthread_t sender;
+  pthread_t timer;
   
   char buffer[512];
 
@@ -97,18 +131,18 @@ int main(int argc, char *argv[]) {
     printf("Connection failed.\n");
     goto exit_err;
   } 
-
+  
   //this block should be moved from here
   sprintf(buffer, "USER %s 0 * :%s\r\n", NICKNAME, OWNER);
   send(irc_socket, buffer, strlen(buffer), 0);
   sprintf(buffer, "NICK %s\r\n", NICKNAME);
   send(irc_socket, buffer, strlen(buffer), 0);
   
-
-  printf("all goood \n");
   while (1) {
     pthread_create (&receiver, NULL, &receive_message, &irc_socket);
-  //  pthread_create (&sender, NULL, &send_message, &irc_socket);
+    //pthread_create (&sender, NULL, &send_message, &irc_socket);
+    pthread_create (&timer, NULL, &irc_timer, NULL);
+
   }
 
 exit_err:
