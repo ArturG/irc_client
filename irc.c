@@ -12,15 +12,14 @@
 #define IRC_ADDRESS "irc.quakenet.org"
 #define IRC_PORT "6667"
 #define OWNER "Bingo"
-#define NICKNAME "SuchImpressive"
+#define NICKNAME "SomeRandomNickname"
 
 /* Defines time in which IRC client will timeout 
  * if no data is received */
-#define NO_DATA_TIMEOUT 90
+#define NO_DATA_TIMEOUT 300
+#define RECONNECT_INTERVAL 60
 
 time_t IRC_LAST_ACTIVITY = 0;   // time of receiving last full line data from IRC server
-time_t IRC_LAST_RECONNECT = 0;  // time of last reconnection attempt
-
 
 void* receive_message(void* arg) {
   int irc_socket = *((int *) arg);
@@ -61,6 +60,17 @@ void* send_message(void* arg) {
   }  
 }
 
+
+void irc_reconnect() {
+  time_t present;
+   
+  time(&present);
+  
+  printf("IRC -> Connection to (%s) failed, reconnecting. \n", IRC_ADDRESS);
+
+  //TODO
+}
+
 void* irc_timer() {
   sleep(30);
 
@@ -76,12 +86,13 @@ void* irc_timer() {
   }
 }
 
-int irc_reconnect() {
-  //TODO
-}
-
-int irc_login() {
-      
+int irc_login(socket) {
+  char buffer[512];
+  //this block should be moved from here
+  sprintf(buffer, "USER %s 0 * :%s\r\n", NICKNAME, OWNER);
+  send(socket, buffer, strlen(buffer), 0);
+  sprintf(buffer, "NICK %s\r\n", NICKNAME);
+  send(socket, buffer, strlen(buffer), 0);    
 }
 
 int get_socket(char* host, char* port) {
@@ -119,30 +130,25 @@ error:
   return -1;
 }
 
+
 int main(int argc, char *argv[]) {
   pthread_t receiver;
+  pthread_t sender;
   pthread_t timer;
   
-  char buffer[512];
-
   int irc_socket = get_socket(IRC_ADDRESS, IRC_PORT);
 
   if (irc_socket < 0 ) {
     printf("Connection failed.\n");
     goto exit_err;
   } 
-  
-  //this block should be moved from here
-  sprintf(buffer, "USER %s 0 * :%s\r\n", NICKNAME, OWNER);
-  send(irc_socket, buffer, strlen(buffer), 0);
-  sprintf(buffer, "NICK %s\r\n", NICKNAME);
-  send(irc_socket, buffer, strlen(buffer), 0);
+
+  irc_login(irc_socket);
   
   while (1) {
     pthread_create (&receiver, NULL, &receive_message, &irc_socket);
-    //pthread_create (&sender, NULL, &send_message, &irc_socket);
-    pthread_create (&timer, NULL, &irc_timer, NULL);
-
+    pthread_create (&sender, NULL, &send_message, &irc_socket);
+    pthread_create (&timer, NULL, &irc_timer, NULL); 
   }
 
 exit_err:
