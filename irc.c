@@ -15,19 +15,14 @@
 #define NICKNAME "SomeRandomNickname"
 #define NO_DATA_TIMEOUT 300
 #define RECONNECT_INTERVAL 30
-
 #define STARTING 0
 #define WORKING 1
 #define RESTARTING 2
 
-time_t IRC_LAST_ACTIVITY = 0;   // time of receiving last full line data from IRC server
-time_t IRC_RECONNECTION_ACTIVITY = 0; // time of latest reconnection attempt
-
-
-int con_socket;
-
 int status = STARTING;
-
+int con_socket;
+time_t IRC_LAST_ACTIVITY = 0;
+time_t IRC_RECONNECTION_ACTIVITY = 0;
 
 void irc_reconnect()
 {
@@ -36,32 +31,38 @@ void irc_reconnect()
   
   delta = present - IRC_RECONNECTION_ACTIVITY;
 
-  if (delta >= RECONNECT_INTERVAL) {
-    printf("IRC -> Connection to (%s) failed, reconnecting. \n", IRC_ADDRESS);
+  if (delta >= RECONNECT_INTERVAL) 
+  {
+    printf(".:. IRC -> Connection to (%s) failed, reconnecting .:.\n", IRC_ADDRESS);
 
     status = RESTARTING;
     time(&IRC_RECONNECTION_ACTIVITY);
   }
 }
 
+//TODO refactor
 void* receive_message(void* arg)
 {
   int irc_socket = *((int *) arg);
   char buffer[512];
   
-  while (recv(irc_socket, buffer, 512, 0) > 0) {
+  while (recv(irc_socket, buffer, 512, 0) > 0) 
+  {
     fputs(buffer, stdout);
     
-    if (!strncmp(buffer, "PING ", 5)) {
+    if (!strncmp(buffer, "PING ", 5)) 
+    {
       buffer[1] = 'O'; //replace char 'I' on 'O' inside 'PING'
       send(irc_socket, buffer, strlen(buffer), 0); //send 'PONG'
     }
 
-    if (strstr(buffer, "PRIVMSG #") != NULL) {
+    if (strstr(buffer, "PRIVMSG #") != NULL) 
+    {
       printf("Received message: %s\n", buffer);
     }
 
-    if (!strncmp(strchr(buffer, ' ') + 1, "001", 3)) {
+    if (!strncmp(strchr(buffer, ' ') + 1, "001", 3)) 
+    {
       sprintf(buffer, "JOIN %s\r\n", IRC_CHANNEL);
       send(irc_socket, buffer, strlen(buffer), 0);
       printf(".:. Connected to the channel %s .:. \n", IRC_CHANNEL);
@@ -75,15 +76,22 @@ void* receive_message(void* arg)
   irc_reconnect();
 }
 
+//TODO refactor
 void* send_message(void* arg)
 {
   int irc_socket = *((int *) arg);
+  int msg;
   char buffer[512];
   char message[512];
   
-  if (fgets(message, sizeof message, stdin)) {
+  if (fgets(message, sizeof message, stdin)) 
+  {
     sprintf(buffer, "PRIVMSG %s :%s\r\n", IRC_CHANNEL, message);
-    send(irc_socket, buffer, strlen(buffer), 0);  
+    msg = send(irc_socket, buffer, strlen(buffer), 0); 
+    if (msg == -1) 
+    {
+      printf("SUPERRR ERRRORRRR \n");
+    } 
     printf("You said: %s\n", message);
   }  
 }
@@ -97,16 +105,19 @@ void* irc_timer()
 
   delta = present - IRC_LAST_ACTIVITY;
 
-  if (delta >= NO_DATA_TIMEOUT) {
+  if (delta >= NO_DATA_TIMEOUT) 
+  {
     printf(".:. Timeout awaiting data from server .:. \n");
     irc_reconnect();
     time(&IRC_LAST_ACTIVITY);
   }
 }
 
+//TODO refactor
 int irc_login(socket)
 {
   char buffer[512];
+  printf(".:. Registration process... .:.\n");
   sprintf(buffer, "USER %s 0 * :%s\r\n", NICKNAME, OWNER);
   send(socket, buffer, strlen(buffer), 0);
   sprintf(buffer, "NICK %s\r\n", NICKNAME);
@@ -132,15 +143,19 @@ int get_socket(char* host, char* port)
 
         if (connect(irc_socket, res -> ai_addr, res -> ai_addrlen) < 0)
          {
-           fprintf(stderr, "Couldn't connect.\n");
+           fprintf(stderr, ".:. Couldn't connect .:.\n");
            close(irc_socket);
            irc_socket=-1;
+         } 
+         else
+         {
+           printf(".:. Connected! .:.\n");
          }
        }
-     else fprintf(stderr, "Couldn't get socket.\n");
+     else fprintf(stderr, ".:. Couldn't get socket .:.\n");
     }
    
-  else fprintf(stderr, "getaddrinfo() error: %s\n", gai_strerror(rc));
+  else fprintf(stderr, ".:. getaddrinfo() error: %s .:.\n", gai_strerror(rc));
 
   if (res) freeaddrinfo(res);
   return irc_socket;
@@ -150,8 +165,9 @@ int irc_cycle()
 {
   con_socket = get_socket(IRC_ADDRESS, IRC_PORT);
   
-  if (con_socket < 0 ) {
-    printf("Connection failed.\n");
+  if (con_socket < 0 ) 
+  {
+    printf(".:. Connection failed .:.\n");
     status = RESTARTING;
   } 
   
@@ -167,19 +183,21 @@ int main(int argc, char *argv[])
   pthread_t timer;
   
   while (1) {
-
-    if (status == STARTING) {
+    if (status == STARTING) 
+    {
       irc_cycle();
       status = WORKING;
     }
     
-    if (status == WORKING) {
+    if (status == WORKING) 
+    {
       pthread_create (&receiver, NULL, &receive_message, &con_socket);
       pthread_create (&sender, NULL, &send_message, &con_socket);
       pthread_create (&timer, NULL, &irc_timer, NULL); 
     }
 
-    if (status == RESTARTING) {
+    if (status == RESTARTING) 
+    {
       pthread_cancel(receiver);
       pthread_cancel(sender);
       pthread_cancel(timer);
