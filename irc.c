@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
+#include <errno.h>
 
 #define IRC_CHANNEL "#testmeout"
 #define IRC_ADDRESS "irc.quakenet.org"
@@ -76,22 +77,45 @@ void* receive_message(void* arg)
   irc_reconnect();
 }
 
-//TODO refactor
+int socket_write(int sock, void *buffer, int len) {
+  int n_sent;
+  int n_left = len;
+  char *buf = buffer;
+
+  while (n_left > 0) 
+  {
+    n_sent = write(sock, buf, n_left);
+    if (n_sent < 0)
+    {
+      if (errno == EINTR) // Interrupted function call
+      { 
+        continue;
+      }
+
+      return -1;
+    }
+
+    n_left -= n_sent;
+    buf += n_sent; // Advance buffer pointer to the next unsent bytes
+  }
+  return len;
+}
+
 void* send_message(void* arg)
 {
   int irc_socket = *((int *) arg);
-  int msg;
   char buffer[512];
   char message[512];
   
   if (fgets(message, sizeof message, stdin)) 
   {
     sprintf(buffer, "PRIVMSG %s :%s\r\n", IRC_CHANNEL, message);
-    msg = send(irc_socket, buffer, strlen(buffer), 0); 
-    if (msg == -1) 
+
+    if (socket_write(irc_socket, buffer, strlen(buffer)) < 0)
     {
-      printf("SUPERRR ERRRORRRR \n");
-    } 
+      status = RESTARTING;
+    }
+  
     printf("You said: %s\n", message);
   }  
 }
