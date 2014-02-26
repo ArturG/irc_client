@@ -41,13 +41,29 @@ void irc_reconnect()
   }
 }
 
-//TODO refactor
+int socket_read(int sock, void *buffer, int len)
+{
+  int n;
+  unsigned char *buf = buffer;
+
+  n = read(sock, buf, len);
+  
+  if (n == -1 && errno == EAGAIN) // Resource temporarily unavailable
+    return -EAGAIN;
+
+  if (n == -1)
+    return -1;
+
+  return n;
+}
+
 void* receive_message(void* arg)
 {
   int irc_socket = *((int *) arg);
   char buffer[512];
   
-  while (recv(irc_socket, buffer, 512, 0) > 0) 
+
+  while (socket_read(irc_socket, buffer, 512) > 0) 
   {
     fputs(buffer, stdout);
     
@@ -120,6 +136,14 @@ void* send_message(void* arg)
   }  
 }
 
+void send_static_message(int sock, char *message)
+{
+  if (socket_write(sock, message, strlen(message)) < 0)
+  {
+    status = RESTARTING;
+  }
+}
+
 void* irc_timer()
 {
   sleep(30);
@@ -137,15 +161,25 @@ void* irc_timer()
   }
 }
 
-//TODO refactor
-int irc_login(socket)
+int send_user_info(socket)
 {
   char buffer[512];
-  printf(".:. Registration process... .:.\n");
   sprintf(buffer, "USER %s 0 * :%s\r\n", NICKNAME, OWNER);
-  send(socket, buffer, strlen(buffer), 0);
+  send_static_message(socket, buffer);
+}
+
+int send_nickname(socket)
+{
+  char buffer[512];
   sprintf(buffer, "NICK %s\r\n", NICKNAME);
-  send(socket, buffer, strlen(buffer), 0);    
+  send_static_message(socket, buffer);
+}
+
+int irc_login(socket)
+{
+  printf(".:. Registration process... .:.\n");
+  send_user_info(socket);
+  send_nickname(socket);
 }
 
 int get_socket(char* host, char* port)
