@@ -41,8 +41,9 @@ void irc_reconnect()
   if (delta >= RECONNECT_INTERVAL) 
   {
     printf(".:. IRC -> Connection to (%s) failed, reconnecting .:.\n", IRC_ADDRESS);
-
+    sem_wait(&mutex);
     status = RESTARTING;
+    sem_post(&mutex);
     time(&IRC_RECONNECTION_ACTIVITY);
   }
 }
@@ -130,24 +131,33 @@ void send_message(void* arg)
   char buffer[512];
   char message[512];
   
-  if (fgets(message, sizeof message, stdin)) 
+  while (1) 
   {
-    sprintf(buffer, "PRIVMSG %s :%s\r\n", IRC_CHANNEL, message);
-
-    if (socket_write(irc_socket, buffer, strlen(buffer)) < 0)
+    if (fgets(message, sizeof message, stdin)) 
     {
-      status = RESTARTING;
+      sprintf(buffer, "PRIVMSG %s :%s\r\n", IRC_CHANNEL, message);
+
+      if (socket_write(irc_socket, buffer, strlen(buffer)) < 0)
+      {
+        sem_wait(&mutex);
+        status = RESTARTING;
+        sem_post(&mutex);
+      }
+    
+      printf("You said: %s\n", message);
     }
-  
-    printf("You said: %s\n", message);
-  }  
+
+    sleep(0);
+  }
 }
 
 void send_static_message(int sock, char *message)
 {
   if (socket_write(sock, message, strlen(message)) < 0)
   {
+    sem_wait(&mutex);
     status = RESTARTING;
+    sem_post(&mutex);
   }
 }
 
@@ -233,7 +243,9 @@ int irc_cycle()
   if (con_socket < 0 ) 
   {
     printf(".:. Connection failed .:.\n");
+    sem_wait(&mutex);
     status = RESTARTING;
+    sem_post(&mutex);
   } 
   
   sleep(5);
@@ -247,6 +259,8 @@ int main(int argc, char *argv[])
   pthread_t sender;
   pthread_t timer;
   
+  sem_init (&mutex, 0, 1);
+
   while (1) {
     if (status == STARTING) 
     {
@@ -274,10 +288,6 @@ int main(int argc, char *argv[])
       status = ACTIVE;
     }
 
-    if (status == ACTIVE)
-    {
-    }
-
     if (status == RESTARTING) 
     {
       pthread_cancel(receiver);
@@ -290,4 +300,12 @@ int main(int argc, char *argv[])
 
     sleep(0);
   }
+
+pthread_join(receiver, NULL);
+pthread_join(sender, NULL);
+pthread_join(timer, NULL);
+
+sem_destroy(&mutex);
+
+return 0;
 }
