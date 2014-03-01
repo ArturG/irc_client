@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <time.h>
 #include <errno.h>
+#include <semaphore.h>
 
 #define IRC_CHANNEL "#testmeout"
 #define IRC_ADDRESS "irc.quakenet.org"
@@ -18,12 +19,17 @@
 #define RECONNECT_INTERVAL 30
 #define STARTING 0
 #define WORKING 1
-#define RESTARTING 2
+#define RESTARTING 3
+#define ACTIVE 4
 
-int status = STARTING;
+volatile int status = STARTING;
+
 int con_socket;
+
 time_t IRC_LAST_ACTIVITY = 0;
 time_t IRC_RECONNECTION_ACTIVITY = 0;
+
+sem_t mutex;
 
 void irc_reconnect()
 {
@@ -57,7 +63,7 @@ int socket_read(int sock, void *buffer, int len)
   return n;
 }
 
-void* receive_message(void* arg)
+void receive_message(void* arg)
 {
   int irc_socket = *((int *) arg);
   char buffer[512];
@@ -65,7 +71,7 @@ void* receive_message(void* arg)
 
   while (socket_read(irc_socket, buffer, 512) > 0) 
   {
-    fputs(buffer, stdout);
+    //fputs(buffer, stdout);
     
     if (!strncmp(buffer, "PING ", 5)) 
     {
@@ -93,7 +99,8 @@ void* receive_message(void* arg)
   irc_reconnect();
 }
 
-int socket_write(int sock, void *buffer, int len) {
+int socket_write(int sock, void *buffer, int len) 
+{
   int n_sent;
   int n_left = len;
   char *buf = buffer;
@@ -117,7 +124,7 @@ int socket_write(int sock, void *buffer, int len) {
   return len;
 }
 
-void* send_message(void* arg)
+void send_message(void* arg)
 {
   int irc_socket = *((int *) arg);
   char buffer[512];
@@ -144,7 +151,7 @@ void send_static_message(int sock, char *message)
   }
 }
 
-void* irc_timer()
+void irc_timer()
 {
   sleep(30);
 
@@ -249,9 +256,26 @@ int main(int argc, char *argv[])
     
     if (status == WORKING) 
     {
-      pthread_create (&receiver, NULL, &receive_message, &con_socket);
-      pthread_create (&sender, NULL, &send_message, &con_socket);
-      pthread_create (&timer, NULL, &irc_timer, NULL); 
+      if (pthread_create (&receiver, NULL, (void *) &receive_message, &con_socket) != 0) 
+      {
+        fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+      }
+
+      if (pthread_create (&sender, NULL, (void *) &send_message, &con_socket) != 0)
+      {
+        fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+      }
+
+      if (pthread_create (&timer, NULL, (void *) &irc_timer, NULL) != 0)
+      {
+        fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+      }
+
+      status = ACTIVE;
+    }
+
+    if (status == ACTIVE)
+    {
     }
 
     if (status == RESTARTING) 
@@ -263,5 +287,7 @@ int main(int argc, char *argv[])
       status = STARTING;
       close(con_socket);
     }
+
+    sleep(0);
   }
 }
