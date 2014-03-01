@@ -129,7 +129,7 @@ void send_message(void* arg)
 {
   int irc_socket = *((int *) arg);
   char buffer[512];
-  char message[512];
+  char message[1024];
   
   while (1) 
   {
