@@ -79,7 +79,8 @@ void receive_message(void* arg)
       buffer[1] = 'O'; //replace char 'I' on 'O' inside 'PING'
       send(irc_socket, buffer, strlen(buffer), 0); //send 'PONG'
     }
-
+    
+    //TODO: parse message
     if (strstr(buffer, "PRIVMSG #") != NULL) 
     {
       printf("Received message: %s\n", buffer);
