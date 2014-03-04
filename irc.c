@@ -10,11 +10,11 @@
 #include <errno.h>
 #include <semaphore.h>
 
-#define IRC_CHANNEL "#testmeout"
+#define IRC_CHANNEL "#leagueoflegends"
 #define IRC_ADDRESS "irc.quakenet.org"
 #define IRC_PORT "6667"
 #define OWNER "Bingo"
-#define NICKNAME "SomeRandomNickname"
+#define NICKNAME "SuchImpressive"
 #define NO_DATA_TIMEOUT 300
 #define RECONNECT_INTERVAL 30
 #define STARTING 0
@@ -68,8 +68,9 @@ void receive_message(void* arg)
 {
   int irc_socket = *((int *) arg);
   char buffer[512];
-  
-
+  char nick[30];
+  char body[256];
+  char trash[288];
   while (socket_read(irc_socket, buffer, 512) > 0) 
   {
     //fputs(buffer, stdout);
@@ -80,10 +81,13 @@ void receive_message(void* arg)
       send(irc_socket, buffer, strlen(buffer), 0); //send 'PONG'
     }
     
-    //TODO: parse message
     if (strstr(buffer, "PRIVMSG #") != NULL) 
     {
-      printf("Received message: %s\n", buffer);
+      if (sscanf(buffer,"%c%[^!]!%[^:]:%s",trash, nick, trash, body) > 0)
+      {
+        printf("From %s: %s\n", nick, body);
+
+      }
     }
 
     if (!strncmp(strchr(buffer, ' ') + 1, "001", 3)) 
