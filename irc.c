@@ -10,8 +10,8 @@
 #include <errno.h>
 #include <semaphore.h>
 
-#define IRC_CHANNEL "#leagueoflegends"
-#define IRC_ADDRESS "irc.quakenet.org"
+#define IRC_CHANNEL "#chat"
+#define IRC_ADDRESS "irc.eversible.com"
 #define IRC_PORT "6667"
 #define OWNER "Bingo"
 #define NICKNAME "SuchImpressive"
@@ -149,7 +149,7 @@ void send_message(void* arg)
         sem_post(&mutex);
       }
     
-      printf("You said: %s\n", message);
+      printf("You said: %s", message);
     }
 
     sleep(0);
