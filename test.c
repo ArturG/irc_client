@@ -17,6 +17,7 @@ void send_message1(void* arg)
 {
   while (1)
   {
+    // seems that semaphore doesn't work
     sem_wait(&mutex);
     printf("oneoneoneoneoneoneone");
     printf("\n");
