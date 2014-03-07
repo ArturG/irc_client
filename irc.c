@@ -10,8 +10,8 @@
 #include <errno.h>
 #include <semaphore.h>
 
-#define IRC_CHANNEL "#chat"
-#define IRC_ADDRESS "irc.eversible.com"
+#define IRC_CHANNEL "#secrettestchannel"
+#define IRC_ADDRESS "irc.quakenet.org"
 #define IRC_PORT "6667"
 #define OWNER "Bingo"
 #define NICKNAME "SuchImpressive"
@@ -29,7 +29,7 @@ int con_socket;
 time_t IRC_LAST_ACTIVITY = 0;
 time_t IRC_RECONNECTION_ACTIVITY = 0;
 
-sem_t mutex;
+pthread_mutex_t count_mutex;
 
 void irc_reconnect()
 {
@@ -41,9 +41,9 @@ void irc_reconnect()
   if (delta >= RECONNECT_INTERVAL) 
   {
     printf(".:. IRC -> Connection to (%s) failed, reconnecting .:.\n", IRC_ADDRESS);
-    sem_wait(&mutex);
+    pthread_mutex_lock(&count_mutex);
     status = RESTARTING;
-    sem_post(&mutex);
+    pthread_mutex_unlock(&count_mutex);
     time(&IRC_RECONNECTION_ACTIVITY);
   }
 }
@@ -144,12 +144,10 @@ void send_message(void* arg)
 
       if (socket_write(irc_socket, buffer, strlen(buffer)) < 0)
       {
-        sem_wait(&mutex);
+        pthread_mutex_lock(&count_mutex);
         status = RESTARTING;
-        sem_post(&mutex);
+        pthread_mutex_unlock(&count_mutex);
       }
-    
-      printf("You said: %s", message);
     }
 
     sleep(0);
@@ -160,9 +158,9 @@ void send_static_message(int sock, char *message)
 {
   if (socket_write(sock, message, strlen(message)) < 0)
   {
-    sem_wait(&mutex);
+    pthread_mutex_lock(&count_mutex);
     status = RESTARTING;
-    sem_post(&mutex);
+    pthread_mutex_unlock(&count_mutex);
   }
 }
 
@@ -248,9 +246,9 @@ int irc_cycle()
   if (con_socket < 0 ) 
   {
     printf(".:. Connection failed .:.\n");
-    sem_wait(&mutex);
+    pthread_mutex_lock(&count_mutex);
     status = RESTARTING;
-    sem_post(&mutex);
+    pthread_mutex_unlock(&count_mutex);
   } 
   
   sleep(5);
@@ -264,7 +262,7 @@ int main(int argc, char *argv[])
   pthread_t sender;
   pthread_t timer;
   
-  sem_init (&mutex, 0, 1);
+  pthread_mutex_init(&count_mutex, NULL);
 
   while (1) {
     if (status == STARTING) 
@@ -310,7 +308,7 @@ pthread_join(receiver, NULL);
 pthread_join(sender, NULL);
 pthread_join(timer, NULL);
 
-sem_destroy(&mutex);
+pthread_mutex_destroy(&count_mutex);
 
 return 0;
 }

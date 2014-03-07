@@ -11,18 +11,18 @@
 #include <errno.h>
 #include <semaphore.h>
 
-sem_t mutex;
+pthread_mutex_t count_mutex;
 
 void send_message1(void* arg)
 {
   while (1)
   {
     // seems that semaphore doesn't work
-    sem_wait(&mutex);
+    pthread_mutex_lock(&count_mutex);
     printf("oneoneoneoneoneoneone");
     printf("\n");
     fflush(stdout);
-    sem_post(&mutex);
+    pthread_mutex_unlock(&count_mutex);
   }
 }
 
@@ -30,11 +30,11 @@ void send_message2(void* arg)
 {
   while (1)
   {
-    sem_wait(&mutex);
+    pthread_mutex_lock(&count_mutex);
     printf("twotwotwotwotwotwotwotwo");
     printf("\n");
     fflush(stdout);
-    sem_post(&mutex);
+    pthread_mutex_unlock(&count_mutex);
   }
 }
 
@@ -42,11 +42,11 @@ void send_message3(void* arg)
 {
   while (1)
   {
-    sem_wait(&mutex);
+    pthread_mutex_lock(&count_mutex);
     printf("threethreethreethreethree");
     printf("\n");
     fflush(stdout);
-    sem_post(&mutex);
+    pthread_mutex_unlock(&count_mutex);
   }
 }
 
@@ -54,16 +54,16 @@ void send_message4(void* arg)
 {
   while (1)
   {
-    sem_wait(&mutex);
+    pthread_mutex_lock(&count_mutex);
     printf("fourfourfourfourfourfour");
     printf("\n");
-    sem_post(&mutex);
+    pthread_mutex_unlock(&count_mutex);
   }
 }
 
 int main(int argc, char *argv[])
 {
-  sem_init (&mutex, 0, 1);
+  pthread_mutex_init(&count_mutex, NULL);
   pthread_t receiver;
   pthread_t sender;
   pthread_t timer;
