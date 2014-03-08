@@ -263,7 +263,8 @@ int main(int argc, char *argv[])
   pthread_t timer;
   
   pthread_mutex_init(&count_mutex, NULL);
-
+  
+  //TODO: get rid of the loop and implement phtread_cond_wait
   while (1) {
     if (status == STARTING) 
     {
