@@ -29,7 +29,8 @@ int con_socket;
 time_t IRC_LAST_ACTIVITY = 0;
 time_t IRC_RECONNECTION_ACTIVITY = 0;
 
-pthread_mutex_t count_mutex;
+pthread_mutex_t status_mutex;
+pthread_cond_t  condition_ready_to_write = PTHREAD_COND_INITIALIZER;
 
 void irc_reconnect()
 {
@@ -41,10 +42,10 @@ void irc_reconnect()
   if (delta >= RECONNECT_INTERVAL) 
   {
     printf(".:. IRC -> Connection to (%s) failed, reconnecting .:.\n", IRC_ADDRESS);
-    pthread_mutex_lock(&count_mutex);
+    pthread_mutex_lock(&status_mutex);
     status = RESTARTING;
-    pthread_mutex_unlock(&count_mutex);
     time(&IRC_RECONNECTION_ACTIVITY);
+    pthread_mutex_unlock(&status_mutex);
   }
 }
 
@@ -71,38 +72,40 @@ void receive_message(void* arg)
   char nick[30];
   char body[256];
   char trash[288];
-  while (socket_read(irc_socket, buffer, 512) > 0) 
+  while (1) 
   {
-    //fputs(buffer, stdout);
-    
-    if (!strncmp(buffer, "PING ", 5)) 
+    if (socket_read(irc_socket, buffer, 512) > 0)
     {
-      buffer[1] = 'O'; //replace char 'I' on 'O' inside 'PING'
-      send(irc_socket, buffer, strlen(buffer), 0); //send 'PONG'
-    }
-    
-    if (strstr(buffer, "PRIVMSG #") != NULL) 
-    {
-      if (sscanf(buffer,"%c%[^!]!%[^:]:%s",trash, nick, trash, body) > 0)
+      //fputs(buffer, stdout);
+
+      if (!strncmp(buffer, "PING ", 5)) 
       {
-        printf("From %s: %s\n", nick, body);
-
+        buffer[1] = 'O'; //replace char 'I' on 'O' inside 'PING'
+        send(irc_socket, buffer, strlen(buffer), 0); //send 'PONG'
       }
-    }
+      
+      if (strstr(buffer, "PRIVMSG #") != NULL) 
+      {
+        if (sscanf(buffer,"%c%[^!]!%[^:]:%[^\n]\n",trash, nick, trash, body) > 0)
+        {
+          printf("From %s: %s\n", nick, body);
+        }
+      }
 
-    if (!strncmp(strchr(buffer, ' ') + 1, "001", 3)) 
-    {
-      sprintf(buffer, "JOIN %s\r\n", IRC_CHANNEL);
-      send(irc_socket, buffer, strlen(buffer), 0);
-      printf(".:. Connected to the channel %s .:. \n", IRC_CHANNEL);
-      printf(".:. You can send messages directly through the console .:. \n");
-    }
+      if (!strncmp(strchr(buffer, ' ') + 1, "001", 3)) 
+      {
+        sprintf(buffer, "JOIN %s\r\n", IRC_CHANNEL);
+        send(irc_socket, buffer, strlen(buffer), 0);
+        printf(".:. Connected to the channel %s .:. \n", IRC_CHANNEL);
+        printf(".:. You can send messages directly through the console .:. \n");
+      }
 
-    time(&IRC_LAST_ACTIVITY);
+      time(&IRC_LAST_ACTIVITY);
+    } else 
+      {
+        irc_reconnect();
+      }
   }
-
-  // if while loop finished it means that we lost connection
-  irc_reconnect();
 }
 
 int socket_write(int sock, void *buffer, int len) 
@@ -114,6 +117,7 @@ int socket_write(int sock, void *buffer, int len)
   while (n_left > 0) 
   {
     n_sent = write(sock, buf, n_left);
+
     if (n_sent < 0)
     {
       if (errno == EINTR) // Interrupted function call
@@ -126,6 +130,7 @@ int socket_write(int sock, void *buffer, int len)
 
     n_left -= n_sent;
     buf += n_sent; // Advance buffer pointer to the next unsent bytes
+
   }
   return len;
 }
@@ -139,18 +144,16 @@ void send_message(void* arg)
   while (1) 
   {
     if (fgets(message, sizeof message, stdin)) 
-    {
+    {  
       sprintf(buffer, "PRIVMSG %s :%s\r\n", IRC_CHANNEL, message);
-
+      
       if (socket_write(irc_socket, buffer, strlen(buffer)) < 0)
       {
-        pthread_mutex_lock(&count_mutex);
+        pthread_mutex_lock(&status_mutex);
         status = RESTARTING;
-        pthread_mutex_unlock(&count_mutex);
+        pthread_mutex_unlock(&status_mutex);
       }
     }
-
-    sleep(0);
   }
 }
 
@@ -158,26 +161,28 @@ void send_static_message(int sock, char *message)
 {
   if (socket_write(sock, message, strlen(message)) < 0)
   {
-    pthread_mutex_lock(&count_mutex);
+    pthread_mutex_lock(&status_mutex);
     status = RESTARTING;
-    pthread_mutex_unlock(&count_mutex);
+    pthread_mutex_unlock(&status_mutex);
   }
 }
 
 void irc_timer()
-{
-  sleep(30);
-
+{ 
   time_t present, delta;
   time(&present);
+  sleep(30);
 
-  delta = present - IRC_LAST_ACTIVITY;
-
-  if (delta >= NO_DATA_TIMEOUT) 
+  while (1)
   {
-    printf(".:. Timeout awaiting data from server .:. \n");
-    irc_reconnect();
-    time(&IRC_LAST_ACTIVITY);
+    delta = present - IRC_LAST_ACTIVITY;
+
+    if (delta >= NO_DATA_TIMEOUT) 
+    {
+      printf(".:. Timeout awaiting data from server .:. \n");
+      irc_reconnect();
+      time(&IRC_LAST_ACTIVITY);
+    }
   }
 }
 
@@ -246,9 +251,10 @@ int irc_cycle()
   if (con_socket < 0 ) 
   {
     printf(".:. Connection failed .:.\n");
-    pthread_mutex_lock(&count_mutex);
+    pthread_mutex_lock(&status_mutex);
     status = RESTARTING;
-    pthread_mutex_unlock(&count_mutex);
+    pthread_mutex_unlock(&status_mutex);
+
   } 
   
   sleep(5);
@@ -262,9 +268,8 @@ int main(int argc, char *argv[])
   pthread_t sender;
   pthread_t timer;
   
-  pthread_mutex_init(&count_mutex, NULL);
+  pthread_mutex_init(&status_mutex, NULL);
   
-  //TODO: get rid of the loop and implement phtread_cond_wait
   while (1) {
     if (status == STARTING) 
     {
@@ -309,7 +314,7 @@ pthread_join(receiver, NULL);
 pthread_join(sender, NULL);
 pthread_join(timer, NULL);
 
-pthread_mutex_destroy(&count_mutex);
+pthread_mutex_destroy(&status_mutex);
 
 return 0;
 }
