@@ -1,4 +1,4 @@
 CFLAGS=-Wall -g -pthread
 
 clean:
-	rm -f test
+	rm -f irc

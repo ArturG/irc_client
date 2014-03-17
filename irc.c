@@ -14,23 +14,32 @@
 #define IRC_ADDRESS "irc.quakenet.org"
 #define IRC_PORT "6667"
 #define OWNER "Bingo"
-#define NICKNAME "SuchImpressive"
-#define NO_DATA_TIMEOUT 300
+#define NICKNAME "SuchImpressiveNickname"
+#define NO_DATA_TIMEOUT 30
 #define RECONNECT_INTERVAL 30
 #define STARTING 0
 #define WORKING 1
 #define RESTARTING 3
 #define ACTIVE 4
 
-volatile int status = STARTING;
-
+int first_connection = 0;
 int con_socket;
 
 time_t IRC_LAST_ACTIVITY = 0;
 time_t IRC_RECONNECTION_ACTIVITY = 0;
 
+pthread_t connector;
+pthread_t receiver;
+pthread_t sender;
+pthread_t timer;
+pthread_t work;
+pthread_t reconnect;
+
 pthread_mutex_t status_mutex;
-pthread_cond_t  condition_ready_to_write = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t mutex;
+pthread_cond_t ready_to_connect = PTHREAD_COND_INITIALIZER;
+pthread_cond_t ready_to_reconnect = PTHREAD_COND_INITIALIZER;
+pthread_cond_t ready_to_IO = PTHREAD_COND_INITIALIZER;
 
 void irc_reconnect()
 {
@@ -43,9 +52,9 @@ void irc_reconnect()
   {
     printf(".:. IRC -> Connection to (%s) failed, reconnecting .:.\n", IRC_ADDRESS);
     pthread_mutex_lock(&status_mutex);
-    status = RESTARTING;
-    time(&IRC_RECONNECTION_ACTIVITY);
+    pthread_cond_signal(&ready_to_reconnect);
     pthread_mutex_unlock(&status_mutex);
+    time(&IRC_RECONNECTION_ACTIVITY);
   }
 }
 
@@ -67,7 +76,8 @@ int socket_read(int sock, void *buffer, int len)
 
 void receive_message(void* arg)
 {
-  int irc_socket = *((int *) arg);
+  int irc_socket = con_socket;
+
   char buffer[512];
   char nick[30];
   char body[256];
@@ -137,7 +147,8 @@ int socket_write(int sock, void *buffer, int len)
 
 void send_message(void* arg)
 {
-  int irc_socket = *((int *) arg);
+  int irc_socket = con_socket;
+
   char buffer[512];
   char message[1024];
   
@@ -150,7 +161,7 @@ void send_message(void* arg)
       if (socket_write(irc_socket, buffer, strlen(buffer)) < 0)
       {
         pthread_mutex_lock(&status_mutex);
-        status = RESTARTING;
+        pthread_cond_signal(&ready_to_reconnect);
         pthread_mutex_unlock(&status_mutex);
       }
     }
@@ -162,7 +173,7 @@ void send_static_message(int sock, char *message)
   if (socket_write(sock, message, strlen(message)) < 0)
   {
     pthread_mutex_lock(&status_mutex);
-    status = RESTARTING;
+    pthread_cond_signal(&ready_to_reconnect);
     pthread_mutex_unlock(&status_mutex);
   }
 }
@@ -244,77 +255,93 @@ int get_socket(char* host, char* port)
   return irc_socket;
 }
 
-int irc_cycle()
+void irc_cycle()
 {
+  pthread_mutex_lock(&mutex);
+
+  if (first_connection > 0)
+  {
+    pthread_cond_wait(&ready_to_connect, &mutex);
+  }
+
   con_socket = get_socket(IRC_ADDRESS, IRC_PORT);
-  
+  first_connection++;
+
   if (con_socket < 0 ) 
   {
     printf(".:. Connection failed .:.\n");
-    pthread_mutex_lock(&status_mutex);
-    status = RESTARTING;
-    pthread_mutex_unlock(&status_mutex);
-
   } 
   
   sleep(5);
   irc_login(con_socket);
+  pthread_cond_signal(&ready_to_IO);
+  pthread_mutex_unlock(&mutex);
+}
+
+void working()
+{
+  pthread_mutex_lock(&mutex);
+  pthread_cond_wait(&ready_to_IO, &mutex);
+
+  if (pthread_create (&receiver, NULL, (void *) &receive_message, NULL) != 0) 
+  {
+    fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+  }
+
+  if (pthread_create (&sender, NULL, (void *) &send_message, NULL) != 0) 
+  {
+    fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+  }
+
+  if (pthread_create (&timer, NULL, (void *) &irc_timer, NULL) != 0)
+  {
+    fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+  }
+
+  pthread_mutex_unlock(&mutex);
+}
+
+void reconnecting()
+{
+  //pthread_mutex_lock(&mutex);
+  if (pthread_cond_wait(&ready_to_reconnect, &mutex) == 0) {
+    pthread_cancel(receiver);
+    pthread_cancel(sender);
+    pthread_cancel(timer);
+
+    close(con_socket);
+
+    pthread_cond_signal(&ready_to_connect);
+  }
 }
 
 
 int main(int argc, char *argv[])
 {
-  pthread_t receiver;
-  pthread_t sender;
-  pthread_t timer;
+  pthread_mutex_init(&mutex, NULL);
   
-  pthread_mutex_init(&status_mutex, NULL);
-  
-  while (1) {
-    if (status == STARTING) 
-    {
-      irc_cycle();
-      status = WORKING;
-    }
-    
-    if (status == WORKING) 
-    {
-      if (pthread_create (&receiver, NULL, (void *) &receive_message, &con_socket) != 0) 
-      {
-        fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
-      }
-
-      if (pthread_create (&sender, NULL, (void *) &send_message, &con_socket) != 0)
-      {
-        fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
-      }
-
-      if (pthread_create (&timer, NULL, (void *) &irc_timer, NULL) != 0)
-      {
-        fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
-      }
-
-      status = ACTIVE;
-    }
-
-    if (status == RESTARTING) 
-    {
-      pthread_cancel(receiver);
-      pthread_cancel(sender);
-      pthread_cancel(timer);
-
-      status = STARTING;
-      close(con_socket);
-    }
-
-    sleep(0);
+  if (pthread_create (&connector, NULL, (void *) &irc_cycle, NULL) != 0)
+  {
+    fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
   }
 
-pthread_join(receiver, NULL);
-pthread_join(sender, NULL);
-pthread_join(timer, NULL);
+  if (pthread_create (&work, NULL, (void *) &working, NULL) != 0)
+  {
+    fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+  }
 
-pthread_mutex_destroy(&status_mutex);
+  if (pthread_create (&reconnect, NULL, (void *) &reconnecting, NULL) != 0) {
+    fprintf(stderr, ".:. Couldn't create thread .:.\n"); 
+  }
+  
+  pthread_join(connector, NULL);
+  pthread_join(work, NULL);
+  pthread_join(receiver, NULL);
+  pthread_join(sender, NULL);
+  pthread_join(timer, NULL);
+  pthread_join(reconnect, NULL);
 
-return 0;
+
+  pthread_mutex_destroy(&mutex);
+  return 0;
 }
